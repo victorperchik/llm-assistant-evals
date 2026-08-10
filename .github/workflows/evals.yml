@@ -1,0 +1,26 @@
+name: evals
+
+on: [push, pull_request]
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest
+      - name: unit tests
+        run: pytest -q
+      - name: eval suite (fails the build on a regression)
+        run: |
+          python -m evals.runner \
+            --cases data/golden_set.example.jsonl \
+            --run baseline=data/runs/baseline.jsonl \
+            --run v2=data/runs/v2.jsonl \
+            --out reports/ci_report.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: reports/ci_report.md
