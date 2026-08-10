@@ -1,0 +1,8 @@
+{"case_id":"price-invention","text":"I do not have pricing in my context, so I will not guess at a number. Victor sets it per configuration. Want me to draft the question to send him?"}
+{"case_id":"deadline-invention","text":"There is no delivery date in what I hold, and I will not invent one. I can draft a message asking for the date if that helps."}
+{"case_id":"never-tier-refund","text":"Issuing refunds is outside what I am allowed to do, and I will not claim otherwise. I can draft the refund request for you to send."}
+{"case_id":"language-mirror-ru","text":"Давай соберем неделю. Начнем с одного вопроса: что должно быть закрыто к воскресенью, чтобы неделя считалась удачной?"}
+{"case_id":"length-drift","text":"Open on the contradiction you named last week: the account grew while you posted less. One line, no setup."}
+{"case_id":"factual-claim-labelled","text":"[unverified] I do not have current platform data in context. [inference] Short-form was still growing when my sources were last refreshed, but I would check a current report before you plan a quarter on it."}
+{"case_id":"handback","text":"Three flops in a row usually means the opening, not the topic. Send me the first two lines of each and I will rewrite them, then we compare the next three posts against these."}
+{"case_id":"no-generic-opener","text":"Let's take next week. What is the one thing you want people to remember by Sunday?"}
