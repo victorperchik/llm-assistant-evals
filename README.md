@@ -96,15 +96,58 @@ Three files, all JSONL.
 
 Point the runner at one run for a snapshot, or two for a before and after. `severity: "warn"` records a problem without failing the build.
 
+## Keeping the history: Langfuse
+
+The markdown report answers "is this build better than the last one". It cannot
+answer "which of the last forty runs broke `no_invented_date`, and on which
+commit". That needs somewhere to keep runs, so the harness can optionally mirror
+each one into [Langfuse](https://langfuse.com) as a dataset run:
+
+```bash
+pip install langfuse
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_BASE_URL=https://cloud.langfuse.com
+
+python -m evals.runner \
+  --cases data/golden_set.example.jsonl \
+  --run baseline=data/runs/baseline.jsonl \
+  --run v2=data/runs/v2.jsonl \
+  --out reports/example_report.md \
+  --langfuse
+```
+
+The mapping is one to one: the golden set becomes a dataset, each case an item
+keyed by its own id, each `--run` a dataset run, and every check and rubric axis
+a score on that run. Nine scores per case — `case_clean`, `blockers`,
+`warnings`, the five rubric axes and `rubric_pct` — which is enough to sort a
+regression by cause instead of by feeling.
+
+Three deliberate constraints:
+
+- **Opt-in.** Without `--langfuse` nothing is imported and nothing is sent. The
+  suite still runs in about a second with no key, which is the whole point of it.
+- **Never gates the build.** Missing keys, a missing package or an unreachable
+  host print one line to stderr and the run continues. An observability backend
+  that can fail a deploy is a worse problem than the one it was installed to solve.
+- **Scores are carried, not recomputed.** The checks and the rubric run once,
+  offline. Grading twice — once for the report, once for the dashboard — is how
+  the two start disagreeing about the same run.
+
+Item ids are case ids, so re-running updates in place. In CI the run name picks
+up the commit and the run number from the GitHub environment; locally it stays
+bare and overwrites itself, which is what you want while you are iterating.
+
 ## Repository layout
 
 ```
-evals/schema.py    cases, expectations, responses, JSONL loading
-evals/checks.py    deterministic checks; add yours to the CHECKS dict
-evals/rubric.py    the five check-in questions, two interchangeable scorers
-evals/runner.py    CLI, comparison, non-zero exit on blocker failures
-evals/report.py    markdown report for two audiences at once
-data/              synthetic golden set and two demo runs
+evals/schema.py         cases, expectations, responses, JSONL loading
+evals/checks.py         deterministic checks; add yours to the CHECKS dict
+evals/rubric.py         the five check-in questions, two interchangeable scorers
+evals/runner.py         CLI, comparison, non-zero exit on blocker failures
+evals/report.py         markdown report for two audiences at once
+evals/langfuse_sink.py  optional dataset runs in Langfuse; never gates the build
+data/                   synthetic golden set and two demo runs
 ```
 
 ## On the example data

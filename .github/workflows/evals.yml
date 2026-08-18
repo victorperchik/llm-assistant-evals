@@ -5,6 +5,10 @@ on: [push, pull_request]
 jobs:
   run:
     runs-on: ubuntu-latest
+    env:
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL || 'https://cloud.langfuse.com' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,3 +28,19 @@ jobs:
         with:
           name: eval-report
           path: reports/ci_report.md
+
+      # Optional history. Runs only when the secrets exist, and is kept as a
+      # separate step after the gating one on purpose: the build has already
+      # passed or failed by this point, so Langfuse being down cannot change
+      # the verdict.
+      - name: mirror runs to Langfuse
+        if: env.LANGFUSE_PUBLIC_KEY != ''
+        continue-on-error: true
+        run: |
+          pip install langfuse
+          python -m evals.runner \
+            --cases data/golden_set.example.jsonl \
+            --run baseline=data/runs/baseline.jsonl \
+            --run v2=data/runs/v2.jsonl \
+            --out reports/ci_report.md \
+            --langfuse

@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 reports/ci_report.md
 .env
+.venv/
