@@ -146,16 +146,32 @@ def push_run(
                 )
         return evaluations
 
+    def summarise(**_: Any) -> list:
+        """Run-level totals, so nobody has to average the item scores back up.
+
+        Without these the only aggregate lives in the description string, and
+        anything reading the run over the API — a dashboard, an agent — has to
+        re-derive it from the per-item scores and hope it derives it the same
+        way the report did.
+        """
+        return [
+            _evaluation("run.cases_clean_pct", 100.0 * result.cases_passed / (result.cases_total or 1)),
+            _evaluation("run.blockers_total", float(len(result.blockers))),
+            _evaluation("run.warnings_total", float(len(result.warnings))),
+            _evaluation("run.rubric_pct", result.rubric_pct),
+        ]
+
     run_name = f"{result.name}{run_suffix}"
     dataset = lf.get_dataset(dataset_name)
     dataset.run_experiment(
         name=run_name,
         description=(
             f"{result.cases_passed}/{result.cases_total} cases clean, "
-            f"{len(result.blockers)} blocker(s), rubric {result.rubric_pct:.0f}%"
+            f"{len(result.blockers)} blocker(s), rubric {result.rubric_pct:.1f}%"
         ),
         task=task,
         evaluators=[grade],
+        run_evaluators=[summarise],
     )
     lf.flush()
     return run_name

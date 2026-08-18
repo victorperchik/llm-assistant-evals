@@ -55,52 +55,95 @@ def test_a_broken_backend_is_swallowed(tmp_path, monkeypatch):
     ]) == 0
 
 
-def test_scores_are_carried_not_recomputed(monkeypatch):
-    """Every score pushed must already exist in the offline RunResult."""
-    sent: list[tuple[str, float]] = []
+class _Recorder:
+    """A stand-in for the SDK that runs the callbacks instead of swallowing them.
 
-    class StubItem:
-        def __init__(self, case_id: str) -> None:
-            self.id = case_id
-            self.input = self.expected_output = None
-            self.metadata = {"case_id": case_id}
+    The first version of this stub took **kwargs and therefore accepted
+    run_evaluators without ever calling them, which meant a green suite said
+    nothing about the run-level scores. A fake that silently absorbs the thing
+    under test is worse than no fake: it reports confidence it does not have.
+    """
 
-    class StubDataset:
-        def __init__(self, items): self.items = items
+    def __init__(self) -> None:
+        self.items: list = []
+        self.item_scores: list[tuple[str, float]] = []
+        self.run_scores: dict[str, float] = {}
+        self.run_evaluators_seen = 0
 
-        def run_experiment(self, *, name, task, evaluators=(), description=None, **_):
-            for item in self.items:
-                task(item=item)
-                for evaluator in evaluators:
-                    for ev in evaluator(input=None, output=None, expected_output=None, metadata=item.metadata):
-                        sent.append((ev.name, ev.value))
-            return types.SimpleNamespace(format=lambda: "")
+    # --- client half -----------------------------------------------------
+    def create_dataset(self, **kw) -> None: ...
 
-    class StubClient:
-        def __init__(self): self.items = []
+    def create_dataset_item(self, **kw) -> None:
+        self.items.append(
+            types.SimpleNamespace(
+                id=kw["id"], input=None, expected_output=None, metadata={"case_id": kw["id"]}
+            )
+        )
 
-        def create_dataset(self, **kw): pass
+    def get_dataset(self, name, **kw): return self
 
-        def create_dataset_item(self, **kw): self.items.append(StubItem(kw["id"]))
+    def flush(self) -> None: ...
 
-        def get_dataset(self, name, **kw): return StubDataset(self.items)
+    # --- dataset half ----------------------------------------------------
+    def run_experiment(self, *, name, task, evaluators=(), run_evaluators=(), description=None, **_):
+        results = []
+        for item in self.items:
+            output = task(item=item)
+            results.append(types.SimpleNamespace(item=item, output=output))
+            for evaluator in evaluators:
+                for ev in evaluator(input=None, output=output, expected_output=None, metadata=item.metadata):
+                    self.item_scores.append((ev.name, ev.value))
+        self.run_evaluators_seen = len(run_evaluators)
+        for evaluator in run_evaluators:
+            for ev in evaluator(item_results=results):
+                self.run_scores[ev.name] = ev.value
+        return types.SimpleNamespace(format=lambda: "")
 
-        def flush(self): pass
 
-    stub = StubClient()
+def _push(monkeypatch, run: str, path: str) -> tuple[_Recorder, object]:
+    stub = _Recorder()
     monkeypatch.setattr(sink, "_client", lambda: stub)
-
     cases = load_cases(CASES)
     sink.sync_dataset(cases, "test-set")
-    assert len(stub.items) == len(cases)
-
-    responses = load_responses(BASELINE, "baseline")
-    result = evaluate(cases, responses, "baseline", HeuristicScorer())
+    responses = load_responses(path, run)
+    result = evaluate(cases, responses, run, HeuristicScorer())
     sink.push_run(responses, result, "test-set")
+    return stub, result
 
-    clean = [value for name, value in sent if name == "case_clean"]
+
+def test_scores_are_carried_not_recomputed(monkeypatch):
+    """Every score pushed must already exist in the offline RunResult."""
+    stub, result = _push(monkeypatch, "baseline", BASELINE)
+    assert len(stub.items) == result.cases_total
+
+    clean = [value for name, value in stub.item_scores if name == "case_clean"]
     assert len(clean) == result.cases_total
     assert sum(clean) == result.cases_passed
 
-    blockers = [value for name, value in sent if name == "blockers"]
+    blockers = [value for name, value in stub.item_scores if name == "blockers"]
     assert sum(blockers) == len(result.blockers)
+
+
+@pytest.mark.parametrize("run,path", [("baseline", BASELINE), ("v2", V2)])
+def test_run_level_aggregates_match_the_offline_result(monkeypatch, run, path):
+    """The run carries its own totals, and they agree with the report.
+
+    Asserted on both runs on purpose: baseline is the failing case and v2 the
+    clean one, and an aggregate that is only ever checked against zeros hides
+    a whole class of arithmetic mistake.
+    """
+    stub, result = _push(monkeypatch, run, path)
+
+    assert stub.run_evaluators_seen == 1, "run_evaluators never reached the SDK"
+    assert set(stub.run_scores) == {
+        "run.cases_clean_pct",
+        "run.blockers_total",
+        "run.warnings_total",
+        "run.rubric_pct",
+    }
+    assert stub.run_scores["run.cases_clean_pct"] == pytest.approx(
+        100.0 * result.cases_passed / result.cases_total
+    )
+    assert stub.run_scores["run.blockers_total"] == len(result.blockers)
+    assert stub.run_scores["run.warnings_total"] == len(result.warnings)
+    assert stub.run_scores["run.rubric_pct"] == pytest.approx(result.rubric_pct)

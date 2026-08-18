@@ -123,6 +123,13 @@ a score on that run. Nine scores per case — `case_clean`, `blockers`,
 `warnings`, the five rubric axes and `rubric_pct` — which is enough to sort a
 regression by cause instead of by feeling.
 
+Each run also carries four aggregates of its own: `run.cases_clean_pct`,
+`run.blockers_total`, `run.warnings_total` and `run.rubric_pct`. They are not
+decoration. Without them the only run-level number lives in a description
+string, and anything reading the run over the API — a dashboard, an agent —
+has to average the per-item scores back up and hope it does it the same way
+the report did.
+
 Three deliberate constraints:
 
 - **Opt-in.** Without `--langfuse` nothing is imported and nothing is sent. The
